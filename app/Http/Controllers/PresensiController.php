@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Response;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
 
 
 class PresensiController extends Controller
@@ -18,7 +20,8 @@ class PresensiController extends Controller
         $hariini = date('Y-m-d');
         $nik = Auth::guard('karyawan')->user()->nik;
         $cek = DB::table('presensi')->where('tgl_presensi', $hariini)->where('nik', $nik)->count();
-        return view('presensi.create', compact('cek'));
+        $lok_kantor = DB::table('konfigurasi_lokasi')->where('id', 1)->first();
+        return view('presensi.create', compact('cek','lok_kantor'));
     }
 
     public function store(Request $request)
@@ -27,8 +30,10 @@ class PresensiController extends Controller
         $nik = Auth::guard('karyawan')->user()->nik;
         $tgl_presensi = date('Y-m-d');
         $jam = date('H:i:s');
-        $latitudekantor = -6.938610851822758 ; 
-        $longitudekantor = 107.72233331534218;
+        $lok_kantor = DB::table('konfigurasi_lokasi')->where('id', 1)->first();
+        $lok = explode(",", $lok_kantor->lokasi_kantor);
+        $latitudekantor =  $lok[0] ; 
+        $longitudekantor = $lok[1];
         $lokasi = $request->lokasi;
         $lokasiuser = explode(",", $lokasi);
         $latitudeuser = $lokasiuser[0];
@@ -52,7 +57,7 @@ class PresensiController extends Controller
         $file = $folderPath . $fileName;
        
         
-        if($radius > 100){
+        if($radius > $lok_kantor->radius){
             echo 'error|Maaf Anda Berada diluar Radius, Jarak Anda Adalah ' . $radius . ' meter dari Kantor|radius';
         }else{
         if($cek > 0){
@@ -147,26 +152,36 @@ public function editprofile()
     }
 
 
-    public function histori()
+    public function createLaporan()
     {
-        $namabulan = ["","Januari",'Februari',"Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November",
-        "Desember"];
-        return view('presensi.histori', compact('namabulan'));
+        return view('presensi.laporan');
     }
 
-    public function gethistori(Request $request){
-        $bulan = $request -> bulan;
-        $tahun = $request -> tahun;
-        $nik = Auth::guard('karyawan')->user()->nik;
-
-        $histori = DB::table('presensi')
-            ->whereRaw('MONTH(tgl_presensi)="' . $bulan . '"')
-            ->whereRaw('YEAR(tgl_presensi)="' . $tahun . '"')
-            ->where('nik', $nik)
-            ->orderBy('tgl_presensi')
-            ->get();
-
-            return view('presensi.gethistori', compact('histori'));
+    public function storeLaporan(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'judul' => 'required|string|max:255',
+            'file' => 'required|mimes:pdf,doc,docx,xls,xlsx|max:10240', // Maksimum 10 MB
+        ]);
+    
+        if ($validator->fails()) {
+            return redirect('/presensi/laporan')
+                        ->withErrors($validator)
+                        ->withInput();
+        }
+    
+        $judul = $request->input('judul');
+        $file = $request->file('file');
+    
+        // Simpan informasi laporan ke database
+        DB::table('laporan')->insert([
+            'judul' => $judul,
+            'file_path' => $file->storeAs('public/laporan', $judul . '.' . $file->getClientOriginalExtension()),
+            'created_at' => now(), // Tambahkan created_at
+            'updated_at' => now(), // Tambahkan updated_at
+        ]);
+    
+        return redirect('/presensi/laporan')->with('success', 'Laporan berhasil diunggah.');
     }
   
     public function izin()
